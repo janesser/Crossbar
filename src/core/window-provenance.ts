@@ -46,6 +46,72 @@ export function piContextWindow(model: ModelDescriptor): number {
 }
 
 /**
+ * One per-model context-window change detected by the resume re-probe.
+ *
+ * `from`/`to` are the effective windows in the persisted (previous) and live (next)
+ * catalogues respectively — `undefined` means unknown (no serviceable window).
+ * `name` is taken from the live (next) descriptor so the notice shows the current name.
+ */
+export interface WindowChange {
+  id: string;
+  name: string;
+  from: number | undefined;
+  to: number | undefined;
+}
+
+/**
+ * Diff the effective context window per model id between two catalogues — the
+ * resume re-probe's change detection.
+ *
+ * Compares `contextWindow` for chat models (`!embeddings`) whose id is present in
+ * BOTH catalogues: a model that appears or disappears is a membership change
+ * (`catalogueChanged`'s concern, never a window-change notice). `name` comes from
+ * the live (next) descriptor.
+ *
+ * Callers pass the MERGED catalogue as `next`, so a live model the merge filled
+ * from the persisted cache compares equal and produces no false notice (the merge
+ * already handles that direction).
+ *
+ * PURE — no I/O, no mutation of the inputs.
+ */
+export function windowChanges(
+  prev: ModelDescriptor[] | undefined,
+  next: ModelDescriptor[],
+): WindowChange[] {
+  const prevById = new Map<string, ModelDescriptor>();
+  for (const p of prev ?? []) {
+    if (typeof p === "object" && p !== null && typeof p.id === "string") {
+      prevById.set(p.id, p);
+    }
+  }
+
+  const changes: WindowChange[] = [];
+  for (const n of next) {
+    if (n.embeddings) continue; // embedding windows are never budgeted — ignored
+    const p = prevById.get(n.id);
+    if (p === undefined) continue; // not in both — membership change, not a window change
+    if (p.contextWindow !== n.contextWindow) {
+      changes.push({ id: n.id, name: n.name, from: p.contextWindow, to: n.contextWindow });
+    }
+  }
+  return changes;
+}
+
+/**
+ * The offline downgrade: drop the serviceable window triplet
+ * (`contextWindow`/`contextWindowSource`/`contextWindowAt`) from every descriptor so a
+ * cached catalogue registers in the unknown state — the Pi boundary then emits the
+ * uniform {@link UNKNOWN_CONTEXT_WINDOW} instead of budgeting a frozen number.
+ * `trainedMax` and all other fields survive (informational, never budgeted).
+ *
+ * Satisfies the pairing invariant (window set iff source set) in the unknown state.
+ * PURE — returns a new array; inputs are not mutated.
+ */
+export function stripWindows(models: ModelDescriptor[]): ModelDescriptor[] {
+  return models.map(({ contextWindow: _w, contextWindowSource: _s, contextWindowAt: _t, ...rest }) => rest);
+}
+
+/**
  * Merge a persisted (cached) catalogue with a freshly listed one, applying the
  * precedence ladder per model.
  *

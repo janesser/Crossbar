@@ -129,6 +129,16 @@ register(record):
   fills models the live list reports no window for — e.g. an unloaded router row) and persists
   the merged catalogue when `catalogueChanged` (which also compares `contextWindowSource`)
   says it is registration-relevant. `updateHealthCache` remains ephemeral.
+  **Resume re-probe honesty (G2):** the same single `session_start` re-check makes its outcome
+  visible without any extra round-trip — on success it diffs the live effective window against
+  the persisted catalogue (`windowChanges`, chat models, shared ids) and, when it changed,
+  emits one `info` notice naming the server and each changed model (first 5 + `+N more`);
+  on failure (backend offline) it re-registers the cached models **windowless**
+  (`stripWindows` drops `contextWindow`/`contextWindowSource`/`contextWindowAt`, keeps
+  `trainedMax`) so the Pi boundary budgets the uniform 8192 fallback instead of a frozen
+  number, and emits one `info` notice that the backend is unreachable (only when ≥1 model is
+  actually registered). Notices are UI-only (`ctx.hasUI` guard); recovery is passive — the
+  next successful probe re-registers live windows and the change notice fires then.
 - **Cache migration (`modelCacheVersion`):** bumped to 3 for the provenance contract. On load,
   every legacy file (missing marker or < 3) passes the v2 fabrication-removal rules, then every
   bare `contextWindow` is re-stamped `observed` (values never changed) and orphan sources are

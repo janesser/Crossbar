@@ -18,7 +18,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 
 import type { DiscoveredServer, ModelDescriptor, ServerRecord } from "./core/index.ts";
-import { mergeCatalogue } from "./core/window-provenance.ts";
+import { mergeCatalogue, stripWindows, windowChanges, type WindowChange } from "./core/window-provenance.ts";
 import { adapterFor, DISCOVERY_ADAPTERS } from "./adapters/index.ts";
 import { discoverLan, discoverLocalhost } from "./discovery/engine.ts";
 import { expandHosts, localSubnetCidrs } from "./discovery/subnet.ts";
@@ -47,6 +47,36 @@ function recordToServer(record: ServerRecord): DiscoveredServer {
     label: record.label,
     confidence: 1,
   };
+}
+
+/**
+ * Resume re-probe callbacks — fired by `refreshAndRegister` when the session-start
+ * re-check resolves differently from the persisted catalogue. Side-effect free; the
+ * caller wires them to the UI (hasUI-guarded `ctx.ui.notify`), so the headless path
+ * simply passes none.
+ */
+interface ReprobeCallbacks {
+  /** The live re-check resolved a different effective window for ≥1 shared chat model. */
+  onWindowChange?: (label: string, changes: WindowChange[]) => void;
+  /** The backend was unreachable — ≥1 cached chat model re-registers windowless. */
+  onOffline?: (label: string, modelCount: number) => void;
+}
+
+/** Per-model changes listed verbatim in a window-change notice before collapsing to "+N more". */
+const NOTICE_MAX_CHANGES = 5;
+
+/** One info line per server whose live re-check resolved a different effective window. */
+function formatWindowChangeNotice(label: string, changes: WindowChange[]): string {
+  const shown = changes
+    .slice(0, NOTICE_MAX_CHANGES)
+    .map((c) => `${c.name}: ${c.from ?? "unknown"} → ${c.to ?? "unknown"} ctx`);
+  const more = changes.length > NOTICE_MAX_CHANGES ? ` (+${changes.length - NOTICE_MAX_CHANGES} more)` : "";
+  return `Crossbar: ${label} — context window changed — ${shown.join("; ")}${more}.`;
+}
+
+/** One info line for an offline server whose cached models stay registered windowless. */
+function formatOfflineNotice(label: string, modelCount: number): string {
+  return `Crossbar: ${label} unreachable — ${modelCount} model(s) kept from cache with unknown window (8192 fallback) until it's back.`;
 }
 
 export default async function crossbar(pi: ExtensionAPI): Promise<void> {
@@ -143,11 +173,24 @@ export default async function crossbar(pi: ExtensionAPI): Promise<void> {
     return keep([...local, ...lan.filter((s) => !seen.has(s.baseUrl))]);
   };
 
-  /** Best-effort: refresh a server's model list and (re)register it with Pi. Returns models used. */
-  async function refreshAndRegister(reg: ServerRegistry, record: ServerRecord): Promise<number> {
+  /**
+   * Best-effort: refresh a server's model list and (re)register it with Pi. Returns models used.
+   *
+   * With `reprobe` callbacks (the session-start re-check), the outcome of the single live
+   * re-probe is made honest: on success, `onWindowChange` fires when the live effective
+   * window differs from the persisted one; on failure, the cached models are registered
+   * windowless (unknown → 8192 at the Pi boundary) and `onOffline` fires when ≥1 model is
+   * actually registered. No extra round-trip — the callbacks only observe the one probe.
+   */
+  async function refreshAndRegister(
+    reg: ServerRegistry,
+    record: ServerRecord,
+    reprobe?: ReprobeCallbacks,
+  ): Promise<number> {
     const adapter = adapterFor(record.kind);
     const cred = await reg.resolveCredential(record);
     let models: ModelDescriptor[] = record.lastKnownModels ?? [];
+    let offline = false;
     try {
       const probe = createProbe(record.baseUrl, { auth: cred, insecureTLS: record.insecureTLS });
       const liveModels = await adapter.listModels(recordToServer(record), cred, probe);
@@ -162,11 +205,25 @@ export default async function crossbar(pi: ExtensionAPI): Promise<void> {
       // Always update lastSeenAt ephemerally (no persist).
       reg.updateHealthCache(record.id, { lastSeenAt: Date.now() });
       models = merged;
+      // Re-probe honesty: the re-check already ran — surface it when the live
+      // effective window differs from the persisted one (diff over the MERGED
+      // catalogue, so cache-filled models compare equal).
+      const changes = windowChanges(record.lastKnownModels, merged);
+      if (changes.length > 0) {
+        reprobe?.onWindowChange?.(record.label, changes);
+      }
     } catch {
-      // Offline / unreachable — fall back to last-known models (may be empty).
+      // Offline / unreachable — fall back to last-known models (may be empty),
+      // registered windowless so Pi budgets the conservative 8192 boundary value
+      // instead of a frozen number.
+      offline = true;
+      models = stripWindows(models);
     }
     const chatModelCount = models.filter((model) => !model.embeddings).length;
     if (chatModelCount === 0) return 0; // nothing registrable (server offline, no cache)
+    if (offline) {
+      reprobe?.onOffline?.(record.label, chatModelCount);
+    }
     await registerServer(pi, reg, record, models);
     return chatModelCount;
   }
@@ -191,11 +248,25 @@ export default async function crossbar(pi: ExtensionAPI): Promise<void> {
     }
 
     try {
+      // Re-probe honesty (session start): the single re-check already re-budgets the
+      // session against live windows — make the outcome visible. UI-only (hasUI guard)
+      // so headless sessions behave exactly as before.
+      const reprobe: ReprobeCallbacks | undefined = ctx.hasUI
+        ? {
+            onWindowChange: (label, changes) => {
+              ctx.ui.notify(formatWindowChangeNotice(label, changes), "info");
+            },
+            onOffline: (label, modelCount) => {
+              ctx.ui.notify(formatOfflineNotice(label, modelCount), "info");
+            },
+          }
+        : undefined;
+
       // 1) Register every enabled server from the saved config.
       for (const record of reg.list()) {
         if (!record.enabled) continue;
         try {
-          await refreshAndRegister(reg, record);
+          await refreshAndRegister(reg, record, reprobe);
         } catch {
           // Never let one bad server abort startup.
         }
@@ -236,7 +307,7 @@ export default async function crossbar(pi: ExtensionAPI): Promise<void> {
             lastSeenAt: Date.now(),
           };
           await reg.add(record);
-          const count = await refreshAndRegister(reg, record);
+          const count = await refreshAndRegister(reg, record, reprobe);
           if (ctx.hasUI && count > 0) {
             ctx.ui.notify(`Crossbar: registered ${srv.label} (${count} models).`, "info");
           }
