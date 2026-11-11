@@ -22,7 +22,20 @@ import {
   supports,
 } from "../../src/core/backend-adapter.ts";
 import { UNKNOWN_CONTEXT_WINDOW } from "../../src/core/window-provenance.ts";
-import type { DiscoveredServer } from "../../src/core/types.ts";
+import type {
+  CanonicalThinkingLevel,
+  DiscoveredServer,
+} from "../../src/core/types.ts";
+
+/** Pi's canonical thinking levels — the only keys a `thinkingLevelMap` may carry. */
+const CANONICAL_LEVELS: CanonicalThinkingLevel[] = [
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+];
 
 import { createFakeProbe } from "./fake-probe.ts";
 import type { RouteMap } from "./fake-probe.ts";
@@ -158,6 +171,18 @@ function describeAdapter(fixture: AdapterFixture): void {
             expect(entry.maxTokens).toBeGreaterThan(0);
           }
           expect(typeof entry.reasoning).toBe("boolean");
+
+          // 8. thinking levels — a reasoning model either carries no map at all (the backend
+          //     reports no level data; Pi then assumes all canonical levels are supported) or a
+          //     map keyed by Pi's canonical levels only, with `string|null` values.
+          if (entry.reasoning === true) {
+            const levelKeys = Object.keys(entry.thinkingLevelMap ?? {});
+            for (const key of levelKeys) {
+              expect(CANONICAL_LEVELS).toContain(key);
+              const value = entry.thinkingLevelMap?.[key as CanonicalThinkingLevel];
+              expect([undefined, null, ...CANONICAL_LEVELS]).toContain(value);
+            }
+          }
         }
       });
     });

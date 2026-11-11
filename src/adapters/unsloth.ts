@@ -402,6 +402,9 @@ class UnslothAdapter implements BackendAdapter {
       id: model.id,
       name: model.name,
       reasoning: model.reasoning ?? false,
+      // Carried from the descriptor (backend-level metadata) — omitted for models that
+      // carry no level information, leaving Pi's default (all canonical levels)
+      thinkingLevelMap: model.thinkingLevelMap,
       input: model.input.length > 0 ? model.input : ["text"],
       // Local inference is free — cost is zero — but cache-hit token COUNTS still matter, so
       // streaming usage stays enabled (never fabricated) in case llama-server reports them.

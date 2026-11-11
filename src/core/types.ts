@@ -9,6 +9,22 @@
 import type { ProviderConfig } from "@earendil-works/pi-coding-agent";
 import type { AuthMode, BackendKind } from "./capability.ts";
 
+/**
+ * Pi's canonical thinking levels — the only keys `thinkingLevelMap` may carry.
+ * Mirrors Pi's own `ThinkingLevel` (`"minimal"|"low"|"medium"|"high"|"xhigh"
+ * + `off`) as declared in pi-agent-core/dist/types.d.ts; see also
+ * `pi-ai/dist/types.d.ts` (`ThinkingLevelMap`).
+ */
+export type CanonicalThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
+/**
+ * Per-model thinking-level support, keyed by Pi's canonical levels. A present key means the
+ * level is supported and its value is what gets sent upstream for it; a missing key means Pi
+ * should use the provider default; `null` marks the level unsupported and hidden from the
+ * selector. This is the exact shape Pi's `Model.thinkingLevelMap` resolves to.
+ */
+export type ThinkingLevelMap = Partial<Record<CanonicalThinkingLevel, string | null>>;
+
 /** A single model entry exactly as Pi's `registerProvider` expects it. Derived from the real type. */
 export type PiModelEntry = NonNullable<ProviderConfig["models"]>[number];
 
@@ -149,6 +165,17 @@ export interface ModelDescriptor {
   input: ("text" | "image")[];
   /** Supports extended thinking / reasoning. */
   reasoning?: boolean;
+  /**
+   * Per-model thinking-level support, keyed by Pi's canonical levels (`off`, `minimal`,
+   * `low`, `medium`, `high`, `xhigh`). Maps from backend metadata (e.g. Unsloth Studio's
+   * `reasoning_effort_levels`): a present key means the level is supported and its value is
+   * what gets sent upstream for it; a missing key means Pi should use the provider default;
+   * `null` marks the level unsupported and hidden from the selector.
+   *
+   * Omit entirely when the backend carries no level information — for a reasoning model,
+   * Pi then assumes all canonical levels are supported. Never fabricate values.
+   */
+  thinkingLevelMap?: ThinkingLevelMap;
   /** Supports tool/function calling. */
   tools?: boolean;
   /** Is an embeddings model (excluded from chat model registration). */

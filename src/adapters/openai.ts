@@ -178,6 +178,9 @@ class OpenAiAdapter implements BackendAdapter {
       id: model.id,
       name: model.name,
       reasoning: model.reasoning ?? false,
+      // Carried from the descriptor (backend-level metadata) — omitted for models that
+      // carry no level information, leaving Pi's default (all canonical levels)
+      thinkingLevelMap: model.thinkingLevelMap,
       input: model.input.length > 0 ? model.input : ["text"],
       // Crossbar does not bill — costs are always zero.
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },

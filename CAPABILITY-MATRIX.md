@@ -3,23 +3,27 @@
 **Date:** 2026-06-21 · companion to `RESEARCH.md`. Values: ✅ yes · ◐ partial/conditional · ❌ no.
 Backend endpoints are **[WEB]** — confirm live per adapter. `pi api` = which built-in Pi API type the
 adapter registers under (`oai` = `openai-completions`, `ant` = `anthropic-messages`).
+The **thinking** column describes what *thinking-level* metadata the backend reports, not whether
+the model thinks: `✅`/`◐` levels are available (e.g. Unsloth Studio's effort levels), all others
+report a boolean at best; where a level map is emittable today, see the `thinkingLevelMap`
+contract in ARCHITECTURE.md §2a.
 
-| Backend | port | pi api | listModels | introspectLoaded | switchModel | loadUnload | autoLoadStatus | auth | health | perModelCaps | streaming | discovery fingerprint |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **Ollama** | 11434 | oai | ✅ `/api/tags`,`/v1/models` | ✅ `/api/ps` | ✅ implicit (request id) | ✅ `keep_alive:0` | ❌ (always on) | ◐ none local | ✅ `GET /` text | ✅ `/api/show` caps + ctx | ✅ | `GET /` → `Ollama is running` |
-| **LM Studio** | 1234 | oai | ✅ `/api/v1/models` (v0 fallback) | ✅ `state` field | ✅ JIT + `/api/v1/models/load` | ✅ load/unload + `lms` | ❌ (always on) | ◐ Bearer, none default | ◐ infer 200 | ✅ type+`max_context_length` | ✅ | `/api/v1/models` (v0 fallback) w/ `state`,`compatibility_type` |
-| **llama-server** | 8080 | oai | ✅ `/v1/models` | ◐ `/props`,`/slots` (single) | ❌ (1/instance) | ❌ classic | ❌ (always on) | ◐ none / `--api-key` | ✅ `/health` | ◐ ctx via `meta.n_ctx`, router args, `/props`; vision via row `architecture.input_modalities`, else `/props` `modalities` on a single-model server | ✅ | `/props` w/ `default_generation_settings`+`build_info` |
-| **llama-swap** | 8080 | oai/ant | ✅ `/v1/models` (all config) | ✅ `/running` | ✅ via `model` → restart upstream | ✅ `/api/models/unload`, ttl | ❌ (always on) | ◐ optional multi-scheme | ✅ `/health`→OK | ◐ ctx via top-level or `meta.llamaswap` `context_length`; output unknown | ✅ | `/` → `/ui/`; `/running`,`/upstream/{model}` |
-| **vLLM** | 8000 | oai | ✅ `/v1/models` | ◐ `/is_sleeping` (dev) | ❌ base · ◐ LoRA | ◐ sleep/wake + LoRA | ❌ | ◐ none / `--api-key` | ✅ `/health` | ◐ `max_model_len` only | ✅ | `/version` + `/metrics` `vllm:` + `owned_by:"vllm"` |
-| **OpenAI** | cloud | oai | ✅ `/v1/models` | ❌ | ✅ (pick id) | ❌ managed | ❌ | ✅ Bearer | ❌ (status page) | ❌ (static table needed) | ✅ | n/a (configured, not probed) |
-| **Anthropic** | cloud | ant | ✅ `/v1/models` | ❌ | ✅ (pick id) | ❌ managed | ❌ | ✅ x-api-key+version | ❌ | ✅ caps + `max_input_tokens` | ✅ | n/a |
-| **TabbyAPI** | 5000 | oai | ✅ `/v1/model/list` | ✅ `/v1/model` | ✅ load | ✅ `/v1/model/{load,unload}` | ❌ | ✅ x-api-key/x-admin-key | ◐ | ◐ | ✅ | `/v1/model/*` + `x-admin-key` |
-| **KoboldCpp** | 5001 | oai | ✅ `/v1/models` | ✅ `/api/v1/model` | ❌ (1 GGUF) | ❌ | ❌ | ◐ `--password` | ✅ `/api/extra/version` | ◐ | ✅ | `/api/extra/version`→`{"result":"KoboldCpp"}` |
-| **oobabooga** | 5000 | oai | ✅ `/v1/models` | ✅ `/v1/internal/model/info` | ✅ load | ✅ `/v1/internal/model/{load,unload}` | ❌ | ◐ `--api-key` | ◐ | ◐ | ✅ | `/v1/internal/*` namespace |
-| **Jan** | 1337 | oai | ✅ `/v1/models` | ◐ | ◐ engine | ◐ engine | ❌ | ◐ Bearer | ❌ | ◐ | ✅ | weak (log line) |
-| **llamafile** | 8080 | oai | ✅ `/v1/models` | ◐ `/props` | ❌ | ❌ | ❌ (always on) | ◐ `--api-key` | ✅ `/health` | ◐ via `/props` | ✅ | `/props` w/ non-`bNNNN` build_info |
-| **Unsloth Studio** | 8888 | oai | ✅ `/v1/models` (keyed) | ✅ per-model `loaded` field | ❌ (UI-only) | ❌ (UI-only) | ✅ `/api/settings/openai-auto-switch` | ✅ Bearer `sk-unsloth-…` (required) | ❌ (poll via listModels) | ◐ ctx fields only while loaded; vision + reasoning for the active model via `/api/inference/status` (#35, #37) — both best-effort | ✅ | `Server: unsloth-studio` header (every response) |
-| **generic OpenAI-compat** | varies | oai | ✅ `/v1/models` | ❌ | ❌ | ❌ | ❌ | ◐ optional Bearer | ◐ | ◐ | ✅ | anything serving `/v1/models` (fallback) |
+ | Backend | port | pi api | listModels | introspectLoaded | switchModel | loadUnload | autoLoadStatus | auth | health | perModelCaps | **thinking** | streaming | discovery fingerprint | 
+ | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | 
+ | **Ollama** | 11434 | oai | ✅ `/api/tags`,`/v1/models` | ✅ `/api/ps` | ✅ implicit (request id) | ✅ `keep_alive:0` | ❌ (always on) | ◐ none local | ✅ `GET /` text | ✅ `/api/show` caps + ctx | ◐ /api/show caps include 'thinking' (boolean only) | ✅ | `GET /` → `Ollama is running` | 
+ | **LM Studio** | 1234 | oai | ✅ `/api/v1/models` (v0 fallback) | ✅ `state` field | ✅ JIT + `/api/v1/models/load` | ✅ load/unload + `lms` | ❌ (always on) | ◐ Bearer, none default | ◐ infer 200 | ✅ type+`max_context_length` | ◐ no level metadata | ✅ | `/api/v1/models` (v0 fallback) w/ `state`,`compatibility_type` | 
+ | **llama-server** | 8080 | oai | ✅ `/v1/models` | ◐ `/props`,`/slots` (single) | ❌ (1/instance) | ❌ classic | ❌ (always on) | ◐ none / `--api-key` | ✅ `/health` | ◐ ctx via `meta.n_ctx`, router args, `/props`; vision via row `architecture.input_modalities`, else `/props` `modalities` on a single-model server | ◐ no level metadata | ✅ | `/props` w/ `default_generation_settings`+`build_info` | 
+ | **llama-swap** | 8080 | oai/ant | ✅ `/v1/models` (all config) | ✅ `/running` | ✅ via `model` → restart upstream | ✅ `/api/models/unload`, ttl | ❌ (always on) | ◐ optional multi-scheme | ✅ `/health`→OK | ◐ ctx via top-level or `meta.llamaswap` `context_length`; output unknown | ◐ no level metadata | ✅ | `/` → `/ui/`; `/running`,`/upstream/{model}` | 
+ | **vLLM** | 8000 | oai | ✅ `/v1/models` | ◐ `/is_sleeping` (dev) | ❌ base · ◐ LoRA | ◐ sleep/wake + LoRA | ❌ | ◐ none / `--api-key` | ✅ `/health` | ◐ `max_model_len` only | ◐ no thinking info (`max_model_len` only) | ✅ | `/version` + `/metrics` `vllm:` + `owned_by:"vllm"` | 
+ | **OpenAI** | cloud | oai | ✅ `/v1/models` | ❌ | ✅ (pick id) | ❌ managed | ❌ | ✅ Bearer | ❌ (status page) | ❌ (static table needed) | ◐ static table (o-series = true, boolean) | ✅ | n/a (configured, not probed) | 
+ | **Anthropic** | cloud | ant | ✅ `/v1/models` | ❌ | ✅ (pick id) | ❌ managed | ❌ | ✅ x-api-key+version | ❌ | ✅ caps + `max_input_tokens` | ◐ `capabilities.thinking` (boolean) | ✅ | n/a | 
+ | **TabbyAPI** | 5000 | oai | ✅ `/v1/model/list` | ✅ `/v1/model` | ✅ load | ✅ `/v1/model/{load,unload}` | ❌ | ✅ x-api-key/x-admin-key | ◐ | ◐ | ◐ no level metadata | ✅ | `/v1/model/*` + `x-admin-key` | 
+ | **KoboldCpp** | 5001 | oai | ✅ `/v1/models` | ✅ `/api/v1/model` | ❌ (1 GGUF) | ❌ | ❌ | ◐ `--password` | ✅ `/api/extra/version` | ◐ | ◐ no level metadata | ✅ | `/api/extra/version`→`{"result":"KoboldCpp"}` | 
+ | **oobabooga** | 5000 | oai | ✅ `/v1/models` | ✅ `/v1/internal/model/info` | ✅ load | ✅ `/v1/internal/model/{load,unload}` | ❌ | ◐ `--api-key` | ◐ | ◐ | ◐ no level metadata | ✅ | `/v1/internal/*` namespace | 
+ | **Jan** | 1337 | oai | ✅ `/v1/models` | ◐ | ◐ engine | ◐ engine | ❌ | ◐ Bearer | ❌ | ◐ | ◐ no level metadata | ✅ | weak (log line) | 
+ | **llamafile** | 8080 | oai | ✅ `/v1/models` | ◐ `/props` | ❌ | ❌ | ❌ (always on) | ◐ `--api-key` | ✅ `/health` | ◐ via `/props` | ◐ no level metadata | ✅ | `/props` w/ non-`bNNNN` build_info | 
+ | **Unsloth Studio** | 8888 | oai | ✅ `/v1/models` (keyed) | ✅ per-model `loaded` field | ❌ (UI-only) | ❌ (UI-only) | ✅ `/api/settings/openai-auto-switch` | ✅ Bearer `sk-unsloth-…` (required) | ❌ (poll via listModels) | ◐ ctx fields only while loaded; vision + reasoning for the active model via `/api/inference/status` (#35, #37) — both best-effort | ◐ `reasoning_effort_levels` on `/api/inference/status` (loaded model only) | ✅ | `Server: unsloth-studio` header (every response) | 
+ | **generic OpenAI-compat** | varies | oai | ✅ `/v1/models` | ❌ | ❌ | ❌ | ❌ | ◐ optional Bearer | ◐ | ◐ | ◐ no level metadata | ✅ | anything serving `/v1/models` (fallback) | 
 
 ## Capability-driven UX rules (derived)
 

@@ -79,6 +79,21 @@ each one:
 
 `CONTRACT_VERSION = 5`. Any breaking change bumps it; registry asserts adapters match.
 
+### 2a. Per-model thinking levels
+
+Pi's `Model.thinkingLevelMap` describes *which* of its canonical levels each model supports and what
+value to send for each one (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). Crossbar passes it
+from the descriptor through `toPiModel()` — omitted when the backend carries no level data, in which
+case Pi assumes all canonical levels are supported for that reasoning model.
+
+- **Carrier:** `ModelDescriptor.thinkingLevelMap` (`Partial<Record<CanonicalThinkingLevel, string | null>>`). A present key means the level is supported and its value is sent upstream; a missing key means Pi uses the provider default; `null` marks the level unsupported (hidden from the selector).
+- **Source:** backend metadata read in `listModels()` (e.g. Unsloth Studio's `reasoning_effort_levels` on
+  `/api/inference/status`). Never inferred from model ids; never fabricated.
+- **Conformance:** every adapter's `reasoning: true` models either carry a valid map or omit it —
+  verified in `tests/conformance/run-conformance.ts`.
+- **Backwards compatible:** adapters without level metadata keep emitting the field absent, so today's
+  behavior (Pi assumes all canonical levels) is unchanged until a backend reports levels.
+
 ## 3. Provider-registration shim (`shim/provider-shim.ts`)
 
 The ONLY bridge to Pi. For each enabled, healthy server:
