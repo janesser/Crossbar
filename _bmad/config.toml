@@ -1,0 +1,14 @@
+# bmad project config for crossbar (generated from central)
+
+[core]
+user_name = "Jan"
+communication_language = "English"
+project_name = "crossbar"
+document_output_language = "English"
+output_folder = "_bmad-output"
+
+[modules.bmm]
+user_skill_level = "intermediate"
+planning_artifacts = "{project-root}/_bmad-output/planning-artifacts"
+implementation_artifacts = "{project-root}/_bmad-output/implementation-artifacts"
+project_knowledge = "{project-root}/docs"
